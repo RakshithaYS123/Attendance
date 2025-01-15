@@ -21,6 +21,11 @@ const Task = mongoose.model('Task', {
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   status: { type: String, default: 'pending' },
+  comments: [{
+    text: String,
+    createdAt: { type: Date, default: Date.now },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })
@@ -45,9 +50,18 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Task routes
 app.get('/api/tasks', async (req, res) => {
-  const tasks = await Task.find()
+  const { userId } = req.query
+  let query = {}
+  
+  const user = await User.findById(userId)
+  if (user.role !== 'team-leader') {
+    query.assignedTo = userId
+  }
+
+  const tasks = await Task.find(query)
     .populate('assignedTo')
     .populate('createdBy')
+    .populate('comments.createdBy')
     .sort('-createdAt')
   res.json(tasks)
 })
@@ -60,14 +74,15 @@ app.post('/api/tasks', async (req, res) => {
   })
   res.json(task)
 })
+
 app.get('/api/users', async (req, res) => {
-    try {
-      const users = await User.find()
-      res.json(users)
-    } catch (error) {
-      res.status(500).json({ error: 'Error fetching users' })
-    }
-  })
+  try {
+    const users = await User.find()
+    res.json(users)
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching users' })
+  }
+})
 
 app.patch('/api/tasks/:id', async (req, res) => {
   const task = await Task.findByIdAndUpdate(
@@ -78,6 +93,27 @@ app.patch('/api/tasks/:id', async (req, res) => {
     },
     { new: true }
   )
+  res.json(task)
+})
+
+// Add comment endpoint
+app.post('/api/tasks/:id/comments', async (req, res) => {
+  const { text, userId } = req.body
+  const task = await Task.findByIdAndUpdate(
+    req.params.id,
+    { 
+      $push: { 
+        comments: { 
+          text, 
+          createdBy: userId,
+          createdAt: new Date()
+        } 
+      },
+      updatedAt: new Date()
+    },
+    { new: true }
+  ).populate('comments.createdBy')
+  
   res.json(task)
 })
 
